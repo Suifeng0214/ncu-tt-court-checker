@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>桌球場預約查詢系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定義 checkbox 樣式 */
+        .time-checkbox:checked + div {
+            background-color: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+		/* 停用狀態的按鈕樣式 */
+        button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-6 font-sans">
+
+    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+        
+        <div class="bg-blue-600 p-6 text-white">
+            <h1 class="text-2xl font-bold">桌球場預約查詢系統
+				<span class="ml-2 text-xs bg-yellow-400 text-blue-900 px-2 py-0.5 rounded-full uppercase font-bold tracking-wider shadow-sm">
+					Beta
+				</span>
+			</h1>
+			<span id="lastUpdate" class="text-xs text-blue-200 bg-blue-800 px-2 py-1 rounded">更新中...</span>
+            <p class="text-blue-100 mt-2">選擇日期與時段，系統將篩選出「全程可用」的桌號</p>
+        </div>
+
+        <div class="p-6">
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">步驟 1: 選擇日期</label>
+                <div class="flex items-center gap-2">
+                    <div class="relative flex-1">
+                        <select id="dateSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none cursor-pointer">
+                            <option value="">載入中...</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+					<button id="prevDayBtn" onclick="changeDate(-1)" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                        </svg>
+                    </button>
+                    <button id="nextDayBtn" onclick="changeDate(1)" class="p-3 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="block text-gray-700 text-sm font-bold">步驟 2: 選擇需要使用的時段 (可多選)</label>
+                    <button onclick="clearTimeSelection()" class="text-xs text-red-500 hover:underline">清除選擇</button>
+                </div>
+                
+                <div id="timeContainer" class="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    <div class="col-span-full text-gray-400 text-sm italic">請先選擇日期</div>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">* 系統將列出同時滿足所有選擇時段的空桌</p>
+            </div>
+
+            <hr class="border-gray-200 my-6">
+
+            <div>
+                <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                    篩選結果
+                    <span id="resultCount" class="ml-2 bg-green-100 text-green-800 text-xs font-semibold px-2.5 py-0.5 rounded hidden">0 桌可用</span>
+                </h2>
+                
+                <div id="resultsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let rawData = [];
+        let currentDayData = null;
+
+        // 頁面載入時讀取 JSON
+        window.onload = async function() {
+            try {
+                const timestamp = new Date().getTime();
+                const url = `./court_data.json?t=${timestamp}`;
+				const response = await fetch('./court_data.json', { 
+					cache: 'no-cache' // 不要快取
+				});
+                if (!response.ok) throw new Error("無法讀取 JSON");
+                const jsonResponse = await response.json();
+            
+				// 更新畫面上最後更新時間
+				document.getElementById('lastUpdate').innerText = `資料最後更新時間: ${jsonResponse.updated_at}`;
+				rawData = jsonResponse.data;
+                
+                initDateSelect();
+            } catch (error) {
+                alert("讀取資料失敗！");
+                console.error(error);
+            }
+        };
+
+        // 初始化日期下拉選單
+        function initDateSelect() {
+            const select = document.getElementById('dateSelect');
+            select.innerHTML = '';
+            
+            rawData.forEach((day, index) => {
+                const option = document.createElement('option');
+                option.value = index; // 用 index 來對應 rawData
+                option.text = `${day.date} (${day.weekday})`;
+                select.appendChild(option);
+            });
+
+            // 預設選取第一天並觸發更新
+            if (rawData.length > 0) {
+                select.value = 0;
+                updateDate(0);
+            }
+
+            // 監聽日期變更
+            select.addEventListener('change', (e) => updateDate(e.target.value));
+        }
+
+		// 新增：處理上一天/下一天的按鈕邏輯
+        function changeDate(offset) {
+            const select = document.getElementById('dateSelect');
+            const currentIndex = parseInt(select.value);
+            const newIndex = currentIndex + offset;
+
+            // 確保不會超出範圍
+            if (newIndex >= 0 && newIndex < rawData.length) {
+                select.value = newIndex;
+                updateDate(newIndex); // 觸發更新
+            }
+        }
+
+        // 修改：更新日期時同時更新按鈕狀態
+        function updateDate(index) {
+            index = parseInt(index); // 確保是數字
+            currentDayData = rawData[index];
+            
+            // 更新按鈕狀態 (第一天禁用上一頁，最後一天禁用下一頁)
+            document.getElementById('prevDayBtn').disabled = (index === 0);
+            document.getElementById('nextDayBtn').disabled = (index === rawData.length - 1);
+
+            renderTimeCheckboxes();
+            filterAndRenderResults();
+        }
+		
+        // 渲染時段 checkbox
+        function renderTimeCheckboxes() {
+            const container = document.getElementById('timeContainer');
+            container.innerHTML = '';
+
+            // 1. 蒐集當天所有場地出現過的所有時段 (去重複並排序)
+            let allTimesSet = new Set();
+            currentDayData.courts.forEach(court => {
+                court.available_slots.forEach(time => allTimesSet.add(time));
+            });
+            // 轉成 Array 並排序
+            const sortedTimes = Array.from(allTimesSet).sort();
+
+            if (sortedTimes.length === 0) {
+                container.innerHTML = '<div class="col-span-full text-red-500">本日已無任何可預約時段</div>';
+                return;
+            }
+
+            // 2. 建立 Checkbox DOM
+            sortedTimes.forEach(time => {
+                const label = document.createElement('label');
+                label.className = "cursor-pointer relative";
+
+                const checkbox = document.createElement('input');
+                checkbox.type = "checkbox";
+                checkbox.value = time;
+                checkbox.className = "time-checkbox sr-only"; // 隱藏原生 checkbox
+                
+                // 監聽點擊事件
+                checkbox.addEventListener('change', filterAndRenderResults);
+
+                const displayBox = document.createElement('div');
+                displayBox.className = "border border-gray-300 rounded-md py-2 text-center text-sm text-gray-700 hover:bg-blue-50 transition select-none";
+                displayBox.innerText = time;
+
+                label.appendChild(checkbox);
+                label.appendChild(displayBox);
+                container.appendChild(label);
+            });
+        }
+
+        // 清除所有時段選擇
+        function clearTimeSelection() {
+            document.querySelectorAll('.time-checkbox').forEach(cb => cb.checked = false);
+            filterAndRenderResults();
+        }
+
+        // 核心邏輯：篩選並渲染結果
+        function filterAndRenderResults() {
+            const container = document.getElementById('resultsContainer');
+            const countBadge = document.getElementById('resultCount');
+            container.innerHTML = '';
+
+            // 1. 取得使用者勾選的所有時段
+            const checkedBoxes = document.querySelectorAll('.time-checkbox:checked');
+            const selectedTimes = Array.from(checkedBoxes).map(cb => cb.value);
+
+            // 2. 篩選邏輯
+            // 如果沒選時段，顯示所有有空位的桌子
+            // 如果選了時段，必須符合「包含所有選定時段」(Intersection Logic)
+            const matchedCourts = currentDayData.courts.filter(court => {
+                if (court.available_slots.length === 0) return false; // 沒空位的直接過濾
+                if (selectedTimes.length === 0) return true; // 沒選篩選條件，只要有空位就顯示
+
+                // 檢查是否每個選中的時間都在該場地的可用時間內
+                // array.every() 是關鍵：只有全部符合才回傳 true
+                return selectedTimes.every(time => court.available_slots.includes(time));
+            });
+
+            // 更新計數標籤
+            countBadge.innerText = `${matchedCourts.length} 桌可用`;
+            countBadge.classList.remove('hidden');
+
+            // 3. 渲染卡片
+            if (matchedCourts.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center py-10 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                        <p class="text-gray-500 text-lg">沒有任何桌子符合您選擇的時段組合</p>
+                        <p class="text-gray-400 text-sm">請嘗試減少選擇的時段</p>
+                    </div>`;
+                return;
+            }
+
+            matchedCourts.forEach(court => {
+                // 為了視覺化，我們要標記出哪些是「本次篩選命中」的時段
+                // 沒被選中的時段顯示灰色，被選中的顯示綠色
+                const timeTags = court.available_slots.map(time => {
+                    const isSelected = selectedTimes.includes(time);
+                    const bgClass = isSelected ? "bg-green-500 text-white" : "bg-gray-200 text-gray-600";
+                    return `<span class="inline-block rounded px-2 py-1 text-xs font-bold mr-1 mb-1 ${bgClass}">${time}</span>`;
+                }).join('');
+
+                const card = document.createElement('div');
+                card.className = "bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition border-l-4 border-l-green-500";
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="font-bold text-lg text-gray-800">${court.name}</h3>
+                    </div>
+                    <div class="flex flex-wrap">
+                        ${timeTags}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+    </script>
+</body>
+</html>
